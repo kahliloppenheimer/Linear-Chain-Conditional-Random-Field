@@ -109,7 +109,7 @@ class CRF(object):
         alpha_matrix = np.zeros((self.num_labels, len(sequence) + 1))
         # alpha_0 is set to 1 for each label
         for label in range(len(self.label_codebook)): alpha_matrix[label][0] = 1
-        for t in range(1, len(sequence)):
+        for t in range(1, len(sequence) + 1):
             alpha_prev = np.array([alpha_matrix[label][t - 1] for label in range(self.num_labels)])
             alpha_curr = np.dot(alpha_prev, transition_matrices[t])
             for label in range(self.num_labels): alpha_matrix[label][t] = alpha_curr[label]
@@ -117,8 +117,6 @@ class CRF(object):
 
     def backward(self, sequence, transition_matrices):
         """Compute beta matrix in the backward algorithm
-
-        TODO: Implement this function
         """
         beta_matrix = np.zeros((self.num_labels, len(sequence) + 1))
         # beta_T is set to 1 for each label
@@ -126,8 +124,8 @@ class CRF(object):
         time = range(len(sequence))
         time.reverse()
         for t in time:
-            beta_ahead = np.array(beta_matrix[label][t + 1] for label in range(self.num_labels))
-            beta_curr = np.dot(beta_ahead, transition_matrices[t])
+            beta_ahead = np.array([beta_matrix[label][t + 1] for label in range(self.num_labels)])
+            beta_curr = np.dot(beta_ahead, transition_matrices[t + 1])
             for label in range(self.num_labels): beta_matrix[label][t] = beta_curr[label]
         return beta_matrix
 

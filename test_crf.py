@@ -16,7 +16,7 @@ class TestCRF(TestCase):
         beta = self.crf.backward(sequence, transition_matrices)
         Z = alpha[:,-1].sum()
         for t in range(len(sequence)-1):
-            self.assertEqual(alpha[:,t].dot(beta[:,t+1]), Z)
+            self.assertEqual(alpha[:,t].dot(beta[:,t]), Z)
 
     def test_alphe0(self):
         """ Check the base case for alpha"""
