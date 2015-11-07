@@ -1,3 +1,4 @@
+import math
 import numpy as np
 
 class CRF(object):
@@ -5,10 +6,10 @@ class CRF(object):
     def __init__(self, label_codebook, feature_codebook):
         self.label_codebook = label_codebook
         self.feature_codebook = feature_codebook
-        num_labels = len(self.label_codebook)
-        num_features = len(self.feature_codebook)
-        self.feature_parameters = np.zeros((num_labels, num_features))
-        self.transition_parameters = np.zeros((num_labels, num_labels))
+        self.num_labels = len(self.label_codebook)
+        self.num_features = len(self.feature_codebook)
+        self.feature_parameters = np.zeros((self.num_labels, self.num_features))
+        self.transition_parameters = np.zeros((self.num_labels, self.num_labels))
 
     def train(self, training_set, dev_set):
         """Training function
@@ -78,32 +79,56 @@ class CRF(object):
         transition_matrices.append(transition_matrix)
         for t in range(len(sequence)):
             # compute transition matrix
-            transition_matrix = np.zeros((num_labels, num_labels))
+            transition_matrix = self.getTransitionMatrix(sequence, t)
             transition_matrices.append(transition_matrix)
         return transition_matrices
 
+    # Returns the transition matrix for the given sequence at timestep t, assuming
+    # the current model parameters
+    def getTransitionMatrix(self, sequence, t):
+        tMatrix = np.zeros((self.num_labels, self.num_labels))
+        labels = self.label_codebook.values()
+        features = sequence[t].feature_vector
+        for l1 in labels:
+            for l2 in labels:
+                # Initial transition matrix should be diagonal
+                if t == 0 and l1 != l2:
+                    tMatrix[l1][l2] = 0
+                else:
+                    featureScore = sum([self.feature_parameters[l2, fIdx] for fIdx in features])
+                    # print 'featureScore = ', featureScore
+                    transitionScore = self.transition_parameters[l1, l2]
+                    # print 'transitionScore = ', transitionScore
+                    tMatrix[l1, l2] = math.exp(transitionScore + featureScore)
+                    # print 'final score = ', tMatrix[l1, l2]
+        return tMatrix
+
     def forward(self, sequence, transition_matrices):
         """Compute alpha matrix in the forward algorithm
-
-        TODO: Implement this function
         """
-        num_labels = len(self.label_codebook)
-        alpha_matrix = np.zeros((num_labels, len(sequence) + 1))
-        for t in range(len(sequence) + 1):
-            pass
-        return alpha_matrix            
+        alpha_matrix = np.zeros((self.num_labels, len(sequence) + 1))
+        # alpha_0 is set to 1 for each label
+        for label in range(len(self.label_codebook)): alpha_matrix[label][0] = 1
+        for t in range(1, len(sequence)):
+            alpha_prev = np.array([alpha_matrix[label][t - 1] for label in range(self.num_labels)])
+            alpha_curr = np.dot(alpha_prev, transition_matrices[t])
+            for label in range(self.num_labels): alpha_matrix[label][t] = alpha_curr[label]
+        return alpha_matrix
 
     def backward(self, sequence, transition_matrices):
         """Compute beta matrix in the backward algorithm
 
         TODO: Implement this function
         """
-        num_labels = len(self.label_codebook)
-        beta_matrix = np.zeros((num_labels, len(sequence) + 1))
-        time = range(len(sequence) + 1)
+        beta_matrix = np.zeros((self.num_labels, len(sequence) + 1))
+        # beta_T is set to 1 for each label
+        for label in range(len(self.label_codebook)): beta_matrix[label][-1] = 1
+        time = range(len(sequence))
         time.reverse()
         for t in time:
-            pass
+            beta_ahead = np.array(beta_matrix[label][t + 1] for label in range(self.num_labels))
+            beta_curr = np.dot(beta_ahead, transition_matrices[t])
+            for label in range(self.num_labels): beta_matrix[label][t] = beta_curr[label]
         return beta_matrix
 
     def decode(self, sequence):
