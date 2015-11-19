@@ -5,7 +5,7 @@ This is my implementation of a linear chain conditional random field (CRF) for s
 # Comparison against maximum entropy classifier
 I have also included a maximum entropy (logistic regression) classifier implementation to compare results against the CRF. The CRF managed to achieve 83% accuracy for both the Character and Character2 feature sets (defined in corpus.py), while the maximum entropy classifier managed to achieve 88% and 93% accuracy for the Character and Character2 feature sets respectively.
 
-# How to use classifier (from test_word_segmentation.py)
+# How to use classifier
 ```python
 
 from corpus import Character2, ThaiWordCorpus
