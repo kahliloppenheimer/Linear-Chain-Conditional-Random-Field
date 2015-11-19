@@ -16,9 +16,9 @@ class CRF(object):
 
         Feel free to adjust the hyperparameters (learning rate and batch sizes)
         """
-        self.train_sgd(training_set, dev_set, 0.001, 200)
+        self.train_sgd(training_set, dev_set, 0.0015, .5, 500)
 
-    def train_sgd(self, training_set, dev_set, learning_rate, batch_size):
+    def train_sgd(self, training_set, dev_set, learning_rate, decay, final_batch_size):
         """Minibatch SGF for training linear chain CRF
 
         This should work. But you can also implement early stopping here
@@ -27,14 +27,18 @@ class CRF(object):
         num_labels = len(self.label_codebook)
         num_features = len(self.feature_codebook)
 
-        num_batches = len(training_set) / batch_size
+        num_iterations = 5
         total_expected_feature_count = np.zeros((num_labels, num_features))
         total_expected_transition_count = np.zeros((num_labels, num_labels))
         print 'With all parameters = 0, the accuracy is %s' % \
                 sequence_accuracy(self, dev_set)
-        for i in range(10):
-            for j in range(num_batches):
-                batch = training_set[j*batch_size:(j+1)*batch_size]
+        for i in range(num_iterations):
+            print 'ITERATION', i
+            curr_batch_size = (final_batch_size / num_iterations) * (i + 1)
+            curr_num_batches = len(training_set) / curr_batch_size
+            curr_learning_rate = learning_rate * math.pow(decay, i)
+            for j in range(curr_num_batches):
+                batch = training_set[j * curr_batch_size:(j+1) * curr_batch_size]
                 total_expected_feature_count.fill(0)
                 total_expected_transition_count.fill(0)
                 total_observed_feature_count, total_observed_transition_count = self.compute_observed_count(batch)
@@ -51,8 +55,8 @@ class CRF(object):
                 feature_gradient = (total_observed_feature_count - total_expected_feature_count) / len(batch)
                 transition_gradient = (total_observed_transition_count - total_expected_transition_count) / len(batch)
 
-                self.feature_parameters += learning_rate * feature_gradient
-                self.transition_parameters += learning_rate * transition_gradient
+                self.feature_parameters += curr_learning_rate * feature_gradient
+                self.transition_parameters += curr_learning_rate * transition_gradient
                 print sequence_accuracy(self, dev_set)
 
 
@@ -79,28 +83,25 @@ class CRF(object):
         transition_matrices.append(transition_matrix)
         for t in range(len(sequence)):
             # compute transition matrix
-            transition_matrix = self.getTransitionMatrix(sequence, t)
+            transition_matrix = self.get_transition_matrix(sequence, t)
             transition_matrices.append(transition_matrix)
         return transition_matrices
 
     # Returns the transition matrix for the given sequence at timestep t, assuming
     # the current model parameters
-    def getTransitionMatrix(self, sequence, t):
+    def get_transition_matrix(self, sequence, t):
         tMatrix = np.zeros((self.num_labels, self.num_labels))
-        labels = self.label_codebook.values()
-        features = sequence[t].feature_vector
-        for l1 in labels:
-            for l2 in labels:
+        for l1 in range(self.num_labels):
+            for l2 in range(self.num_labels):
                 # Initial transition matrix should be diagonal
-                if t == 0 and l1 != l2:
-                    tMatrix[l1][l2] = 0
+                if t == 0:
+                    if l1 == l2:
+                        featureScore = sum(self.feature_parameters[l2, sequence[t].feature_vector])
+                        tMatrix[l1, l2] = math.exp(featureScore)
                 else:
-                    featureScore = sum([self.feature_parameters[l2, fIdx] for fIdx in features])
-                    # print 'featureScore = ', featureScore
+                    featureScore = sum(self.feature_parameters[l2, sequence[t].feature_vector])
                     transitionScore = self.transition_parameters[l1, l2]
-                    # print 'transitionScore = ', transitionScore
                     tMatrix[l1, l2] = math.exp(transitionScore + featureScore)
-                    # print 'final score = ', tMatrix[l1, l2]
         return tMatrix
 
     def forward(self, sequence, transition_matrices):
@@ -110,9 +111,7 @@ class CRF(object):
         # alpha_0 is set to 1 for each label
         for label in range(len(self.label_codebook)): alpha_matrix[label][0] = 1
         for t in range(1, len(sequence) + 1):
-            alpha_prev = np.array([alpha_matrix[label][t - 1] for label in range(self.num_labels)])
-            alpha_curr = np.dot(alpha_prev, transition_matrices[t])
-            for label in range(self.num_labels): alpha_matrix[label][t] = alpha_curr[label]
+            alpha_matrix[:, t] = transition_matrices[t].dot(alpha_matrix[:, t - 1])
         return alpha_matrix
 
     def backward(self, sequence, transition_matrices):
@@ -121,26 +120,28 @@ class CRF(object):
         beta_matrix = np.zeros((self.num_labels, len(sequence) + 1))
         # beta_T is set to 1 for each label
         for label in range(len(self.label_codebook)): beta_matrix[label][-1] = 1
-        time = range(len(sequence))
+        time = range(1, len(sequence) + 1)
         time.reverse()
         for t in time:
-            beta_ahead = np.array([beta_matrix[label][t + 1] for label in range(self.num_labels)])
-            beta_curr = np.dot(beta_ahead, transition_matrices[t + 1])
-            for label in range(self.num_labels): beta_matrix[label][t] = beta_curr[label]
+            beta_matrix[:,[t-1]] = transition_matrices[t].dot(beta_matrix[:,[t]])
         return beta_matrix
 
     def decode(self, sequence):
-        """Find the best label sequence from the feature sequence
-
-        TODO: Implement this function
-
-        Returns :
-            a list of label indices (the same length as the sequence)
+        """ Decodes the given sequence into a list of indexes into the label codebook
         """
-        transition_matrices = self.compute_transition_matrices(sequence)
-        decoded_sequence = range(len(sequence))
-
-        return decoded_sequence
+        M = self.compute_transition_matrices(sequence)
+        vit_matrix = np.zeros((self.num_labels, len(sequence) + 1))
+        lab_matrix = [[[] for i in range(len(sequence))] for j in range(self.num_labels)]
+        # Set first values
+        for label in self.label_codebook.values():
+            vit_matrix[0][label] = M[1][label, label]
+            lab_matrix[label][0] = [label]
+        for t in range(1, len(sequence)):
+            for l_curr in range(self.num_labels):
+                candidates = np.multiply(vit_matrix[:, t - 1], M[t + 1][:, l_curr])
+                vit_matrix[l_curr][t] = np.max(candidates)
+                lab_matrix[l_curr][t] = lab_matrix[np.argmax(candidates)][t - 1] + [l_curr]
+        return lab_matrix[np.argmax(vit_matrix[:, -1])][-1]
 
     def compute_observed_count(self, sequences):
         """Compute observed counts of features from the minibatch
@@ -168,13 +169,11 @@ class CRF(object):
             alpha_matrix, beta_matrix, transition_matrices):
         """Compute expected counts of features from the sequence
 
-        TODO: Complete this function by implementing
-        expected transition feature count computation
-        Be careful with indexing on alpha, beta, and transition matrix
+        This is implemented for you.
 
         Returns :
             A tuple of
-                a matrix of feature counts 
+                a matrix of feature counts
                 a matrix of transition-based feature counts
         """
         num_labels = len(self.label_codebook)
@@ -184,13 +183,15 @@ class CRF(object):
         sequence_length = len(sequence)
         Z = np.sum(alpha_matrix[:,-1])
 
-        #gamma = alpha_matrix * beta_matrix / Z 
+        #gamma = alpha_matrix * beta_matrix / Z
         gamma = np.exp(np.log(alpha_matrix) + np.log(beta_matrix) - np.log(Z))
         for t in range(sequence_length):
             for j in range(num_labels):
                 feature_count[j, sequence[t].feature_vector] += gamma[j, t]
 
         transition_count = np.zeros((num_labels, num_labels))
+        for t in range(sequence_length - 1):
+            transition_count += (transition_matrices[t] * np.outer(alpha_matrix[:, t], beta_matrix[:,t+1])) / Z
         return feature_count, transition_count
 
 def sequence_accuracy(sequence_tagger, test_set):

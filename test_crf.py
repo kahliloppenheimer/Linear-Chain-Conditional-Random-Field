@@ -34,5 +34,12 @@ class TestCRF(TestCase):
         for li in range(beta.shape[0]):
             self.assertEqual(beta[li, -1], 1)
 
+    def ryan(self):
+        pass
+
+    def ryan(self):
+        print 'foo'
+
+TestCRF().ryan()
 if __name__ == '__main__':
     main(verbosity=2)
